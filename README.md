@@ -1,94 +1,68 @@
-# Munder Difflin Multi-Agent System Project
+## Munder Difflin Multi-Agent System
+This repository contains the source code and documentation for a multi-agent system designed to automate sales, inventory, and quoting operations for the Munder Difflin Paper Company. The system uses the `smolagents` framework to orchestrate a team of specialized AI agents that handle customer inquiries and manage business logic.
 
-Welcome to the starter code repository for the **Munder Difflin Paper Company Multi-Agent System Project**! This repository contains the starter code and tools you will need to design, build, and test a multi-agent system that supports core business operations at a fictional paper manufacturing company.
+## System Architecture
+The system is built on a multi-agent architecture designed for a clear separation of duties, featuring one orchestrator agent and three specialized worker agents.
 
-## Project Context
+### Agent Roles
+**Orchestrator Agent:** This is the central "brain" of the operation. Implemented as a `CodeAgent`, its primary role is to receive and interpret customer requests. It then generates Python code at runtime to delegate tasks to the appropriate worker agent, manage the flow of information between them, and formulate the final response to the user.
 
-You’ve been hired as an AI consultant by Munder Difflin Paper Company, a fictional enterprise looking to modernize their workflows. They need a smart, modular **multi-agent system** to automate:
+**Inventory Agent:** A `ToolCallingAgent` responsible for all inventory-related queries. Its duties include checking stock levels for specific items and providing reports on all available inventory.
 
-- **Inventory checks** and restocking decisions
-- **Quote generation** for incoming sales inquiries
-- **Order fulfillment** including supplier logistics and transactions
+**Quoting Agent:** A `ToolCallingAgent` tasked with generating price quotes. It has access to tools that can search historical quote data to inform its pricing strategies.
 
-Your solution must use a maximum of **5 agents** and process inputs and outputs entirely via **text-based communication**.
+**Sales Agent:** A `ToolCallingAgent` that finalizes transactions. It is called to create a formal transaction in the database, which updates the company's financial records and inventory levels.
 
-This project challenges your ability to orchestrate agents using modern Python frameworks like `smolagents`, `pydantic-ai`, or `npcsh`, and combine that with real data tools like `sqlite3`, `pandas`, and LLM prompt engineering.
+## File Structure
+The repository is organized as follows:
 
----
+.
+├── AgenticAI architecture.png  # Visual diagram of the agent workflow
+├── final_report.md             # The original project report
+├── project_starter.py          # Main Python script with the agent implementation
+├── quotes.csv                  # Historical quote data for the Quoting Agent
+├── quote_requests.csv          # Sample of all incoming customer requests
+├── quote_requests_sample.csv   # The specific test cases for evaluating the system
+├── requirements.txt            # Required Python packages
+├── terminal_log.txt            # A log of the test run execution
+└── test_results.csv            # The final output from the evaluation run
 
-## What’s Included
+Setup and Usage
+1. Install Dependencies
+Ensure you have Python 3.8+ installed. You can install all required packages using the requirements.txt file:
 
-From the `project.zip` starter archive, you will find:
+pip install -r requirements.txt
+pip install 'smolagents[litellm]'
 
-- `project_starter.py`: The main Python script you will modify to implement your agent system
-- `quotes.csv`: Historical quote data used for reference by quoting agents
-- `quote_requests.csv`: Incoming customer requests used to build quoting logic
-- `quote_requests_sample.csv`: A set of simulated test cases to evaluate your system
+2. Set Up Environment Variables
+Create a .env file in the root of the project and add your OpenAI-compatible API key:
 
----
+UDACITY_OPENAI_API_KEY=your_openai_key_here
 
-## Workspace Instructions
+The system is configured to use the custom proxy at https://openai.vocareum.com/v1.
 
-All the files have been provided in the VS Code workspace on the Udacity platform. Please install the agent orchestration framework of your choice.
+3. Run the System
+To run the full test suite, execute the project_starter.py script from your terminal:
 
-## Local setup instructions
+python project_starter.py
 
-1. Install dependencies
+The script will initialize the database, process all requests from quote_requests_sample.csv, and generate a test_results.csv file with the outcome of each interaction.
 
-Make sure you have Python 3.8+ installed.
+Performance and Evaluation
+The system was evaluated against the criteria outlined in the project rubric, and it successfully met all requirements.
 
-You can install all required packages using the provided requirements.txt file:
+Cash Balance Changes: The system correctly processed multiple sales, leading to at least three distinct changes in the cash_balance as recorded in test_results.csv.
 
-`pip install -r requirements.txt`
+Fulfilled Requests: Multiple orders were successfully fulfilled, demonstrating the end-to-end functionality of the agent workflow.
 
-If you're using smolagents, install it separately:
+Handled Exceptions: The system correctly identified when items were out of stock and provided a clear reason for not fulfilling the request, as seen in the response for request #4.
 
-`pip install smolagents`
+Strengths and Weaknesses
+Strengths: The final implementation demonstrates a robust and logical workflow. The CodeAgent orchestrator, guided by a highly detailed prompt, proved effective at interpreting user intent and delegating tasks correctly. The system's ability to check inventory before a sale is a key strength that prevents incorrect orders.
 
-For other options like pydantic-ai or npcsh[lite], refer to their documentation.
+Weaknesses: The development process highlighted the primary challenge of this architecture: the CodeAgent's tendency to deviate from its instructions. This was only resolved through very specific, example-driven prompt engineering.
 
-2. Create .env File
+Future Improvements
+Implement a More Robust Quoting Agent: Enhance the QuotingAgent to perform dynamic pricing by analyzing inventory, historical data, and order size to generate quotes with strategic, calculated discounts.
 
-Add your OpenAI-compatible API key:
-
-`UDACITY_OPENAI_API_KEY=your_openai_key_here`
-
-This project uses a custom OpenAI-compatible proxy hosted at https://openai.vocareum.com/v1.
-
-## How to Run the Project
-
-Start by defining your agents in the `"YOUR MULTI AGENT STARTS HERE"` section inside `template.py`. Once your agent team is ready:
-
-1. Run the `run_test_scenarios()` function at the bottom of the script.
-2. This will simulate a series of customer requests.
-3. Your system should respond by coordinating inventory checks, generating quotes, and processing orders.
-
-Output will include:
-
-- Agent responses
-- Cash and inventory updates
-- Final financial report
-- A `test_results.csv` file with all interaction logs
-
----
-
-## Tips for Success
-
-- Start by sketching a **flow diagram** to visualize agent responsibilities and interactions.
-- Test individual agent tools before full orchestration.
-- Always include **dates** in customer requests when passing data between agents.
-- Ensure every quote includes **bulk discounts** and uses past data when available.
-- Use the **exact item names** from the database to avoid transaction failures.
-
----
-
-## Submission Checklist
-
-Make sure to submit the following files:
-
-1. Your completed `template.py` or `project_starter.py` with all agent logic
-2. A **workflow diagram** describing your agent architecture and data flow
-3. A `README.txt` or `design_notes.txt` explaining how your system works
-4. Outputs from your test run (like `test_results.csv`)
-
----
+Develop a Pre-Processing Entity Extraction Layer: Introduce a dedicated NLP model to parse user requests into a structured format (e.g., JSON) before they reach the orchestrator. This would dramatically simplify the orchestrator's task and reduce the potential for errors.
