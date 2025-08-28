@@ -4,6 +4,7 @@ import os
 import time
 import dotenv
 import ast
+import re
 from sqlalchemy.sql import text
 from datetime import datetime, timedelta
 from typing import Dict, List, Union
@@ -372,6 +373,7 @@ def search_quote_history(search_terms: List[str], limit: int = 5) -> List[Dict]:
         result = conn.execute(text(query), params)
         return [dict(row) for row in result.mappings()]
 
+# 1. Imports and Model Setup
 # dotenv.load_dotenv()
 API_KEY = "voc-10166986601587664276185689c6aaf2cfae0.86305996"
 
@@ -379,143 +381,130 @@ llm_model = LiteLLMModel(
     model_id="gpt-3.5-turbo",
     api_base="https://openai.vocareum.com/v1",
     api_key=API_KEY,
-    temperature=0.1,
+    temperature=0.0,
 )
 
-# 2. Define Tools for the Agents
-class InventoryTools(Tool):
-    """Container for all inventory-related tools."""
+# 2. Tool Definitions (Individual Classes)
 
-    @staticmethod
-    def get_all_inventory(as_of_date: str) -> str:
-        """
-        Retrieves a snapshot of all available inventory as of a specific date.
-        Args:
-            as_of_date (str): The date for the inventory snapshot in YYYY-MM-DD format.
-        Returns:
-            str: A string representation of the inventory dictionary (item_name: stock_level).
-        """
-        inventory_dict = get_all_inventory(as_of_date)
-        return str(inventory_dict)
+class GetAllInventoryTool(Tool):
+    name = "get_all_inventory" 
+    description = "Retrieves a snapshot of all available inventory."
+    inputs = {"as_of_date": {"type": "string", 
+                             "description": "The date for the snapshot in YYYY-MM-DD format."}}
+    output_type = "string"
+    def forward(self, as_of_date: str) -> str: return str(get_all_inventory(as_of_date))
 
-    @staticmethod
-    def get_stock_level(item_name: str, as_of_date: str) -> int:
-        """
-        Checks the stock level for a single, specific item on a given date.
-        Args:
-            item_name (str): The name of the item to check.
-            as_of_date (str): The date of the check in YYYY-MM-DD format.
-        Returns:
-            int: The current stock level of the item.
-        """
-        stock_df = get_stock_level(item_name, as_of_date)
-        if not stock_df.empty:
-            return int(stock_df.iloc[0]["current_stock"])
-        return 0
+class GetStockLevelTool(Tool):
+    name = "get_stock_level"
+    description = "Checks the stock level for a single, specific item."
+    inputs = {"item_name": {"type": "string", 
+                            "description": "The name of the item to check."}, 
+              "as_of_date": {"type": "string", 
+                             "description": "The date of the check in YYYY-MM-DD format."}}
+    output_type = "integer"
+    def forward(self, item_name: str, as_of_date: str) -> int: return get_stock_level(item_name, as_of_date)
 
-    @staticmethod
-    def get_supplier_delivery_date(item_name: str, quantity: int, as_of_date: str) -> str:
-        """
-        Estimates the delivery date for a new stock order of a specific item.
-        Args:
-            item_name (str): The name of the item being ordered.
-            quantity (int): The quantity of the item being ordered.
-            as_of_date (str): The date the order is placed, in YYYY-MM-DD format.
-        Returns:
-            str: The estimated delivery date in YYYY-MM-DD format.
-        """
-        return get_supplier_delivery_date(as_of_date, quantity)
+class GetSupplierDeliveryDateTool(Tool):
+    name = "get_supplier_delivery_date"
+    description = "Estimates the delivery date for a new stock order."
+    inputs = {"item_name": {"type": "string", 
+                            "description": "The name of the item being ordered."}, 
+              "quantity": {"type": "integer", 
+                           "description": "The quantity being ordered."}, 
+              "as_of_date": {"type": "string", 
+                             "description": "The date the order is placed."}}
+    output_type = "string"
+    def forward(self, item_name: str, quantity: int, as_of_date: str) -> str: return get_supplier_delivery_date(as_of_date, quantity)
 
-class QuotingTools(Tool):
-    """Container for all quoting-related tools."""
+class SearchQuoteHistoryTool(Tool):
+    name = "search_quote_history"; description = "Searches historical quotes for similar requests."
+    inputs = {"search_terms": {"type": "array", 
+                               "items": {"type": "string"}, 
+                               "description": "Keywords from the customer's request."}, 
+              "limit": {"type": "integer", 
+                        "description": "Max number of quotes to return.", 
+                        "nullable": True}}
+    output_type = "string"
+    def forward(self, search_terms: List[str], limit: int = 5) -> str: return search_quote_history(search_terms, limit)
 
-    @staticmethod
-    def search_quote_history(search_terms: List[str], limit: int = 5) -> str:
-        """
-        Searches historical quotes for similar requests to inform new pricing.
-        Args:
-            search_terms (List[str]): A list of keywords from the customer's request.
-            limit (int): The maximum number of historical quotes to return.
-        Returns:
-            str: A string representation of the list of matching historical quotes.
-        """
-        history = search_quote_history(search_terms, limit)
-        return str(history)
-
-class SalesTools(Tool):
-    """Container for all sales-related tools."""
-
-    @staticmethod
-    def create_transaction(item_name: str, transaction_type: str, quantity: int, price: float, date: str) -> str:
-        """
-        Finalizes a sale by creating a transaction record in the database.
-        Args:
-            item_name (str): The name of the item sold.
-            transaction_type (str): The type of transaction, should be 'sales'.
-            quantity (int): The number of units sold.
-            price (float): The total price of the sale.
-            date (str): The date of the transaction in YYYY-MM-DD format.
-        Returns:
-            str: A confirmation message with the new transaction ID.
-        """
+class CreateTransactionTool(Tool):
+    name = "create_transaction"; description = "Finalizes a sale by creating a transaction record."
+    inputs = {"item_name": {"type": "string", 
+                            "description": "The name of the item sold."}, 
+              "transaction_type": {"type": "string", 
+                                   "description": "'sales' or 'stock_orders'"}, 
+              "quantity": {"type": "integer", 
+                           "description": "The number of units."}, 
+              "price": {"type": "number", 
+                        "description": "The total price."}, 
+              "date": {"type": "string", 
+                       "description": "The transaction date."}}
+    output_type = "string"
+    def forward(self, item_name: str, transaction_type: str, quantity: int, price: float, date: str) -> str:
         transaction_id = create_transaction(item_name, transaction_type, quantity, price, date)
-        return f"Successfully created transaction with ID: {transaction_id}"
+        return f"Transaction created with ID: {transaction_id}"
 
-    @staticmethod
-    def get_cash_balance(as_of_date: str) -> float:
-        """
-        Retrieves the current cash balance of the company.
-        Args:
-            as_of_date (str): The date for which to calculate the balance.
-        Returns:
-            float: The current cash balance.
-        """
-        return get_cash_balance(as_of_date)
+# 3. Worker Agent Definitions
+inventory_agent = ToolCallingAgent(name="InventoryAgent", 
+                                   description="Inventory specialist. Checks stock and delivery dates.", 
+                                   tools=[GetAllInventoryTool(), 
+                                          GetStockLevelTool(), 
+                                          GetSupplierDeliveryDateTool()], 
+                                   model=llm_model)
 
-# 3. Create the Worker Agents
-inventory_agent = ToolCallingAgent(
-    name="InventoryAgent",
-    description="You are an inventory management specialist. Your role is to check stock levels, report on all available inventory, and estimate supplier delivery dates. You are precise and provide only the data requested.",
-    tools=[InventoryTools()],
-    model=llm_model,
-)
+quoting_agent = ToolCallingAgent(name="QuotingAgent", 
+                                 description="Quoting specialist. Searches historical data to generate quotes.", 
+                                 tools=[SearchQuoteHistoryTool()], 
+                                 model=llm_model)
 
-quoting_agent = ToolCallingAgent(
-    name="QuotingAgent",
-    description="You are a quoting specialist. Your job is to create competitive and attractive price quotes for customers. You should consult historical quote data to inform your pricing and always check for product availability before providing a quote. You should apply bulk discounts strategically to encourage sales.",
-    tools=[QuotingTools()],
-    model=llm_model,
-)
+sales_agent = ToolCallingAgent(name="SalesAgent", 
+                               description="Sales specialist. Finalizes sales by creating transactions.", 
+                               tools=[CreateTransactionTool()], 
+                               model=llm_model)
 
-sales_agent = ToolCallingAgent(
-    name="SalesAgent",
-    description="You are a sales finalization specialist. Your responsibility is to process a confirmed sale by creating a transaction in the database. You must be accurate with the details of the transaction.",
-    tools=[SalesTools()],
-    model=llm_model,
-)
-
-# 4. Create the Orchestration Agent
+# 4. Orchestrator Agent Definition (CodeAgent) - REFINED PROMPT
 orchestrator_agent = CodeAgent(
     name="OrchestratorAgent",
     description=(
-        "You are the orchestrator for the Beaver's Choice Paper Company. "
-        "Your primary role is to manage a team of specialist agents to handle customer requests efficiently. "
-        "Here is your workflow: "
-        "1. Receive the customer request. "
-        "2. If the request is a simple inventory check, delegate it to the 'InventoryAgent'. "
-        "3. If the request requires a price quote, delegate it to the 'QuotingAgent'. The QuotingAgent will need to know what is in stock, so you must first use the 'InventoryAgent' to get the current inventory and pass that information along with the original request to the 'QuotingAgent'. "
-        "4. If the customer's request implies they have accepted a quote and want to proceed with a purchase, delegate the task to the 'SalesAgent' to finalize the transaction. "
-        "5. You are the only agent that communicates with the user. You will synthesize the information from your team and provide the final, clear response."
+        "You are a task router. Your ONLY job is to delegate a user's request to the correct specialist agent by writing Python code. "
+        "You MUST respond with a single Python code block in `<code>...</code>` format and NOTHING ELSE. "
+        "\n--- YOUR DECISION PROCESS ---"
+        "\n1. **Analyze the Request**: Read the user's request to determine their intent. The request will always contain `(Date of request: YYYY-MM-DD)`. Use this date for all tool calls."
+        "\n2. **Identify the Intent**: "
+        "\n   - If the user asks for a 'quote', 'price', or 'cost', the intent is 'Generate Quote'."
+        "\n   - If the user wants to 'order', 'buy', or 'purchase', the intent is 'Finalize Sale'."
+        "\n   - Otherwise, the intent is 'Check Inventory'."
+        "\n3. **Generate Code**: Based on the intent, write the Python code by following the appropriate example below. The final line of your code must be a `print()` statement."
+        "\n--- EXAMPLES ---"
+        "\n**1. If the intent is 'Generate Quote':**"
+        "\n<code>"
+        "\ninventory = InventoryAgent.run('Get all inventory for date 2025-04-01')\n"
+        "quote = QuotingAgent.run(f'User request: \"I would like a quote for 200 sheets of A4 paper... (Date of request: 2025-04-01)\". Current inventory is: {inventory}')\n"
+        "print(quote)\n"
+        "</code>"
+        "\n**2. If the intent is 'Finalize Sale':**"
+        "\n<code>"
+        "\nstock_level = int(InventoryAgent.run('Check stock for \"A4 paper\" on date 2025-04-10'))\n"
+        "requested_quantity = 500\n"
+        "if stock_level >= requested_quantity:\n"
+        "    confirmation = SalesAgent.run('Create a \"sales\" transaction for 500 of \"A4 paper\" at a total price of 25.0 on date 2025-04-10')\n"
+        "    print(confirmation)\n"
+        "else:\n"
+        "    print(f'Sorry, \"A4 paper\" is out of stock. We only have {stock_level} units available.')\n"
+        "</code>"
+        "\n**3. If the intent is 'Check Inventory':**"
+        "\n<code>"
+        "\ndelivery_date = InventoryAgent.run('What is the estimated delivery date for 500 sheets of \"Cardstock\" if ordered on 2025-04-05?')\n"
+        "print(delivery_date)\n"
+        "</code>"
     ),
+    tools=[],
     managed_agents=[inventory_agent, quoting_agent, sales_agent],
     model=llm_model,
 )
 
 def call_your_multi_agent_system(request_with_date: str):
-    """
-    This function takes the user's request and passes it to the orchestrator agent.
-    """
-    print(f"--- Passing request to Orchestrator Agent ---")
+    print(f"--- Passing request to Orchestrator ---")
     response = orchestrator_agent.run(request_with_date)
     return response
 
